@@ -91,30 +91,34 @@ resource "aws_lb_listener" "http" {
   }
 }
 
-resource "aws_autoscaling_group" "web_asg" {
-  desired_capacity     = 2
-  max_size             = 3
-  min_size             = 1
-  vpc_zone_identifier  = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
-  target_group_arns    = [aws_lb_target_group.app_tg.arn]
-  launch_configuration = aws_launch_configuration.web_lc.id
-}
-
-resource "aws_launch_configuration" "web_lc" {
-  name          = "web-launch-config"
+resource "aws_launch_template" "web_lt" {
+  name_prefix   = "web-server-"
   image_id      = "ami-00bb6a80f01f03502"
   instance_type = "t2.micro"
-  security_groups = [aws_security_group.alb_sg.id]
+  vpc_security_group_ids = [aws_security_group.alb_sg.id]
 
   user_data = base64encode(<<-EOF
-              #!/bin/bash
-              yum update -y
-              yum install -y httpd
-              systemctl start httpd
-              systemctl enable httpd
-              echo "<h1>Welcome to My Web Server</h1>" > /var/www/html/index.html
-              EOF
+                #!/bin/bash
+                yum update -y
+                yum install -y httpd
+                systemctl start httpd
+                systemctl enable httpd
+                echo "<h1>Welcome to My Web Server</h1>" > /var/www/html/index.html
+                EOF
   )
+}
+
+resource "aws_autoscaling_group" "web_asg" {
+  desired_capacity    = 2
+  max_size            = 3
+  min_size            = 1
+  vpc_zone_identifier = [aws_subnet.subnet_a.id, aws_subnet.subnet_b.id]
+  target_group_arns   = [aws_lb_target_group.app_tg.arn]
+
+  launch_template {
+    id      = aws_launch_template.web_lt.id
+    version = "$Latest"
+  }
 }
 
 output "alb_dns_name" {
