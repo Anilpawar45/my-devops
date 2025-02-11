@@ -102,7 +102,7 @@ resource "aws_autoscaling_group" "web_asg" {
 
 resource "aws_launch_configuration" "web_lc" {
   name          = "web-launch-config"
-  image_id      = "ami-0c55b159cbfafe1f0"
+  image_id      = "ami-00bb6a80f01f03502"
   instance_type = "t2.micro"
   security_groups = [aws_security_group.alb_sg.id]
 
