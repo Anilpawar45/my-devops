@@ -13,6 +13,11 @@ resource "aws_subnet" "public" {
   cidr_block        = "10.0.1.0/24"
   availability_zone = "us-east-1a"
 }
+resource "aws_subnet" "private" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.3.0/24"
+  availability_zone = "us-east-1b"
+}
 
 # Create an Internet Gateway
 resource "aws_internet_gateway" "gw" {
@@ -63,14 +68,19 @@ resource "aws_security_group" "httpd_sg" {
   }
 }
 
-# Launch Configuration for HTTPD instances
-resource "aws_launch_configuration" "httpd_lc" {
-  name_prefix     = "httpd-lc-"
-  image_id        = "ami-04b4f1a9cf54c11d0" 
-  instance_type   = "t2.micro"
-  security_groups = [aws_security_group.httpd_sg.id]
+# Launch Template for HTTPD instances
+resource "aws_launch_template" "httpd_lt" {
+  name_prefix   = "httpd-lt-"
+  image_id      = "ami-04b4f1a9cf54c11d0" 
+  instance_type = "t2.micro"
+  key_name      = "anil" 
 
-  user_data = <<-EOF
+  network_interfaces {
+    associate_public_ip_address = true
+    security_groups             = [aws_security_group.httpd_sg.id]
+  }
+
+  user_data = base64encode(<<-EOF
               #!/bin/bash
               yum update -y
               yum install -y httpd
@@ -78,6 +88,15 @@ resource "aws_launch_configuration" "httpd_lc" {
               systemctl enable httpd
               echo "<h1>Hello from $(hostname -f)</h1>" > /var/www/html/index.html
               EOF
+  )
+
+  tag_specifications {
+    resource_type = "instance"
+
+    tags = {
+      Name = "httpd-instance"
+    }
+  }
 
   lifecycle {
     create_before_destroy = true
@@ -86,12 +105,16 @@ resource "aws_launch_configuration" "httpd_lc" {
 
 # Auto Scaling Group
 resource "aws_autoscaling_group" "httpd_asg" {
-  name                 = "httpd-asg"
-  launch_configuration = aws_launch_configuration.httpd_lc.name
-  min_size             = 2
-  max_size             = 4
-  desired_capacity     = 2
-  vpc_zone_identifier  = [aws_subnet.public.id]
+  name                = "httpd-asg"
+  min_size            = 2
+  max_size            = 4
+  desired_capacity    = 2
+  vpc_zone_identifier = [aws_subnet.public.id]
+
+  launch_template {
+    id      = aws_launch_template.httpd_lt.id
+    version = "$Latest"
+  }
 
   tag {
     key                 = "Name"
@@ -131,7 +154,6 @@ resource "aws_lb_target_group" "httpd_tg" {
 resource "aws_autoscaling_attachment" "httpd_asg_attachment" {
   autoscaling_group_name = aws_autoscaling_group.httpd_asg.name
   lb_target_group_arn   = aws_lb_target_group.httpd_tg.arn
-
 }
 
 # Load Balancer Listener
